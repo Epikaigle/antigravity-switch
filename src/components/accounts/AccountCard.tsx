@@ -6,7 +6,6 @@ import {
     Circle,
     Clock,
     Diamond,
-    Download,
     Gem,
     GripVertical,
     Lock,
@@ -31,7 +30,6 @@ interface AccountCardProps {
     onRefresh: () => void;
     onEditLabel: () => void;
     onDelete: () => void;
-    onExport?: () => void;
     dragHandleProps?: {
         attributes?: any;
         listeners?: any;
@@ -48,7 +46,6 @@ function AccountCard({
     onRefresh,
     onEditLabel,
     onDelete,
-    onExport,
     dragHandleProps,
     isDragging = false,
 }: AccountCardProps) {
@@ -61,7 +58,6 @@ function AccountCard({
     const switchLabel = isSwitching ? t('accounts.switching') : t('accounts.switch_cta');
     const refreshLabel = t('accounts.action_refresh');
     const noteLabel = t('accounts.action_note');
-    const exportLabel = t('accounts.action_export');
     const deleteLabel = t('accounts.action_delete');
 
     const lastUpdatedLabel = account.quota?.last_updated
@@ -253,19 +249,6 @@ function AccountCard({
                         <Tag className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                         <span>{noteLabel}</span>
                     </button>
-
-                    {onExport && (
-                        <button
-                            type="button"
-                            onClick={onExport}
-                            disabled={isSwitching}
-                            aria-label={`${exportLabel} (${account.email})`}
-                            className="min-h-8 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-white inline-flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                        >
-                            <Download className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                            <span>{exportLabel}</span>
-                        </button>
-                    )}
 
                     <button
                         type="button"

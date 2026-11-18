@@ -265,7 +265,7 @@ impl AppConfig {
             language: crate::modules::i18n::default_language(),
             theme: "system".to_string(),
             check_updates_on_startup: true,
-            auto_refresh: true,
+            auto_refresh: false,
             refresh_interval: 15,
             auto_sync: false,
             sync_interval: 5,

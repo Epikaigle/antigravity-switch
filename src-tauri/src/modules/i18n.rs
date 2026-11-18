@@ -31,6 +31,7 @@ fn supported_language(locale: &str) -> Option<&'static str> {
 
 /// Tray text structure
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TrayTexts {
     pub saved: String,
     pub quota: String,

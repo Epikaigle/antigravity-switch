@@ -1877,6 +1877,47 @@ async fn refresh_all_quotas_once() -> Result<RefreshStats, String> {
     })
 }
 
+/// Update an account's custom label atomically without altering other fields.
+pub fn set_account_label_at(
+    data_dir: &std::path::Path,
+    account_id: &str,
+    label: &str,
+) -> Result<(), String> {
+    if account_id.is_empty()
+        || account_id.contains('/')
+        || account_id.contains('\\')
+        || account_id.contains("..")
+    {
+        return Err("Invalid account identifier".to_string());
+    }
+    let trimmed = label.trim();
+    if trimmed.chars().count() > 15 {
+        return Err("Label cannot exceed 15 characters".to_string());
+    }
+    let account_path = data_dir.join("accounts").join(format!("{}.json", account_id));
+    if !account_path.exists() {
+        return Err(format!("Account file not found: {}", account_id));
+    }
+    let content =
+        fs::read_to_string(&account_path).map_err(|e| format!("Failed to read account: {}", e))?;
+    let mut account_json: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse account JSON: {}", e))?;
+    account_json["custom_label"] = if trimmed.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::Value::String(trimmed.to_string())
+    };
+    let json_str = serde_json::to_string_pretty(&account_json)
+        .map_err(|e| format!("Failed to serialize account JSON: {}", e))?;
+    crate::utils::fs::write_atomic(&account_path, json_str.as_bytes())?;
+    modules::logger::log_info(&format!(
+        "Updated account label: {} -> {}",
+        account_id,
+        if trimmed.is_empty() { "(cleared)" } else { trimmed }
+    ));
+    Ok(())
+}
+
 #[cfg(test)]
 mod ordering_tests {
     use super::*;
@@ -1927,5 +1968,35 @@ mod transfer_tests {
         assert!(build_account_export(vec![account], &["missing".into()]).is_err());
         let old: crate::models::AccountExportResponse = serde_json::from_str(r#"{"accounts":[{"email":"fixture@example.test","refresh_token":"1//fixture"}]}"#).unwrap();
         assert!(old.accounts[0].oauth_client_key.is_none());
+    }
+
+    #[test]
+    fn set_account_label_at_updates_and_clears_preserving_fields() {
+        let temp = tempfile::tempdir().unwrap();
+        let accounts_dir = temp.path().join("accounts");
+        fs::create_dir_all(&accounts_dir).unwrap();
+        let path = accounts_dir.join("acc-1.json");
+        let original = serde_json::json!({
+            "id": "acc-1",
+            "email": "a@example.test",
+            "token": { "refresh_token": "1//keep" },
+            "custom_label": null
+        });
+        fs::write(&path, serde_json::to_string_pretty(&original).unwrap()).unwrap();
+
+        set_account_label_at(temp.path(), "acc-1", "  Pro  ").unwrap();
+        let updated: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(updated["custom_label"], "Pro");
+        assert_eq!(updated["token"]["refresh_token"], "1//keep");
+
+        assert!(set_account_label_at(temp.path(), "acc-1", "1234567890123456").is_err());
+        assert!(set_account_label_at(temp.path(), "../escape", "Pro").is_err());
+
+        set_account_label_at(temp.path(), "acc-1", "   ").unwrap();
+        let cleared: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(cleared["custom_label"].is_null());
+        assert_eq!(cleared["token"]["refresh_token"], "1//keep");
     }
 }

@@ -1,5 +1,6 @@
 //! Credential-free native menu projection. Percentages are relative headroom,
 //! never token capacity; keep independent families/windows and fail closed.
+#![cfg_attr(not(test), allow(dead_code))]
 use super::account_dashboard::{DashboardEntry, DashboardSnapshot};
 use crate::models::config::MenuBarQuotaScope;
 use std::collections::HashMap;

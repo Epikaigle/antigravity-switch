@@ -8,7 +8,7 @@ mod workflows;
 use output::{AccountView, Snapshot};
 use std::path::{Path, PathBuf};
 
-const HELP: &str = "agy-switch - Antigravity account management CLI\n\nUsage:\n  agy-switch                         Interactive dashboard / menu (TUI)\n  agy-switch accounts list [--json]\n  agy-switch current [--target app|ide] [--json]\n  agy-switch quota [ACCOUNT_ID|EMAIL] [--json]\n  agy-switch switch [ACCOUNT_ID|EMAIL] [--target app|ide|agy] [--json]\n  agy-switch refresh [ACCOUNT_ID|EMAIL] [--json]\n  agy-switch accounts order [ID|EMAIL...] [--json]\n  agy-switch --help\n  agy-switch --version\n\nRead commands use local cached data only and never open the GUI or refresh tokens.\n'current' is agy-switch's recorded account, not a live credential-store check.\n'switch' may refresh tokens, close/restart Antigravity, and update credentials.\nDefault target 'app' synchronizes APP credentials and an initialized agy session.\nIDE switches leave App and agy credentials unchanged.\nTarget 'agy' switches the shared App+agy login without closing or restarting any client; a running App keeps its session until it restarts.\nOrdering requires every account exactly once.\nAccounts can be managed interactively via TUI or through the GUI. ABV_DATA_DIR overrides the data directory.\n";
+const HELP: &str = "agy-switch - Antigravity account management CLI\n\nUsage:\n  agy-switch                         Interactive dashboard / menu (TUI)\n  agy-switch accounts list [--json]\n  agy-switch current [--target app|ide] [--json]\n  agy-switch quota [ACCOUNT_ID|EMAIL] [--json]\n  agy-switch switch [ACCOUNT_ID|EMAIL] [--target app|ide|agy] [--json]\n  agy-switch refresh [ACCOUNT_ID|EMAIL] [--json]\n  agy-switch label ACCOUNT_ID|EMAIL LABEL [--json]\n  agy-switch accounts order [ID|EMAIL...] [--json]\n  agy-switch --help\n  agy-switch --version\n\nRead commands use local cached data only and never open the GUI or refresh tokens.\n'current' is agy-switch's recorded account, not a live credential-store check.\n'switch' may refresh tokens, close/restart Antigravity, and update credentials.\nDefault target 'app' synchronizes APP credentials and an initialized agy session.\nIDE switches leave App and agy credentials unchanged.\nTarget 'agy' switches the shared App+agy login without closing or restarting any client; a running App keeps its session until it restarts.\nOrdering requires every account exactly once.\nAccounts can be managed interactively via TUI or through the GUI. ABV_DATA_DIR overrides the data directory.\n";
 
 #[derive(Debug, PartialEq)]
 enum Command {
@@ -23,6 +23,7 @@ enum Command {
     InteractiveSwitch { target: String },
     InteractiveDashboard,
     AccountOrder(Vec<String>),
+    AccountLabel { selector: String, label: String },
 }
 
 #[derive(Debug)]
@@ -89,6 +90,10 @@ fn parse(args: &[String], interactive: bool) -> Result<(Command, bool)> {
             Command::Refresh(Some((*selector).into()))
         }
         ["order", rest @ ..] if rest.iter().all(|s| !s.starts_with('-')) => Command::AccountOrder(rest.iter().map(|s| (*s).into()).collect()),
+        ["label", selector, label] if !selector.starts_with('-') => Command::AccountLabel {
+            selector: (*selector).into(),
+            label: (*label).into(),
+        },
         ["switch"] if interactive && !json => Command::InteractiveSwitch {
             target: "app".into(),
         },
@@ -206,6 +211,9 @@ fn execute(command: Command, json: bool) -> Result<String> {
             })
         }
         Command::AccountOrder(selectors) => return settings::order_accounts(&data_dir()?, &selectors, json),
+        Command::AccountLabel { selector, label } => {
+            return settings::set_label(&data_dir()?, &selector, &label, json)
+        }
         _ => {}
     }
     let snapshot = if matches!(command, Command::CurrentIde) { Snapshot::read_for_target(&data_dir()?, "ide")? } else { Snapshot::read(&data_dir()?)? };
@@ -506,6 +514,26 @@ mod tests {
         assert_eq!(
             parse_test(&["refresh"]).unwrap(),
             (Command::Refresh(None), false)
+        );
+        assert_eq!(
+            parse_test(&["label", "alice@example.invalid", "Pro", "--json"]).unwrap(),
+            (
+                Command::AccountLabel {
+                    selector: "alice@example.invalid".into(),
+                    label: "Pro".into()
+                },
+                true
+            )
+        );
+        assert_eq!(
+            parse_test(&["accounts", "label", "acc-1", "Ultra 1"]).unwrap(),
+            (
+                Command::AccountLabel {
+                    selector: "acc-1".into(),
+                    label: "Ultra 1".into()
+                },
+                false
+            )
         );
     }
     #[test]

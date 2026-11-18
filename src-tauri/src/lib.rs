@@ -244,7 +244,6 @@ pub fn run() {
         )
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_denylist(&[modules::desktop::DASHBOARD_LABEL])
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::all()
                         .difference(tauri_plugin_window_state::StateFlags::VISIBLE),
@@ -259,8 +258,6 @@ pub fn run() {
         .manage(modules::desktop::DesktopRuntime::default())
         .setup(move |app| {
             info!("Setup starting...");
-            #[cfg(target_os = "macos")]
-            modules::desktop::install_dashboard_shortcut(app.handle())?;
             modules::quota_refresh::start(app.handle().clone());
             modules::account_sync::start(app.handle().clone());
             if tray_enabled {
@@ -284,16 +281,13 @@ pub fn run() {
         .on_window_event(modules::desktop::handle_window_event)
         .invoke_handler(tauri::generate_handler![
             modules::desktop::get_desktop_settings,
-            modules::desktop::get_menu_bar_appearance,
             modules::desktop::set_desktop_preferences,
             modules::desktop::open_app_page,
             modules::desktop::main_window_ready,
             modules::desktop::present_main_window,
-            modules::desktop::hide_menu_bar_dashboard,
             modules::desktop::quit_app,
             commands::list_accounts,
             commands::get_account_dashboard_snapshot,
-            commands::get_menu_bar_snapshot,
             commands::set_menu_bar_preferences,
             commands::set_dashboard_cards,
             commands::add_account,

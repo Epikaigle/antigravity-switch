@@ -45,3 +45,37 @@ pub(super) fn order_accounts(root: &Path, selectors: &[String], json: bool) -> R
             .join("\n")
     })
 }
+
+pub(super) fn set_label(root: &Path, selector: &str, label: &str, json: bool) -> Result<String> {
+    let snapshot = Snapshot::read(root)?;
+    let account = snapshot.select(selector)?;
+    let trimmed = label.trim();
+    crate::modules::account::set_account_label_at(root, &account.id, trimmed).map_err(|err| {
+        if err.contains("15 characters") {
+            CliError {
+                code: 2,
+                message: "Label cannot exceed 15 characters.",
+            }
+        } else {
+            CliError::data("Cannot update account label.")
+        }
+    })?;
+    let label_opt = (!trimmed.is_empty()).then_some(trimmed);
+    Ok(if json {
+        serde_json::json!({
+            "schema_version": 1,
+            "account_id": account.id,
+            "email": account.email,
+            "custom_label": label_opt
+        })
+        .to_string()
+    } else if let Some(value) = label_opt {
+        format!(
+            "Updated label for {} to '{}'.",
+            terminal_text(&account.email),
+            terminal_text(value)
+        )
+    } else {
+        format!("Cleared label for {}.", terminal_text(&account.email))
+    })
+}

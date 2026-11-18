@@ -31,7 +31,6 @@ interface AccountGridProps {
     onRefresh: (accountId: string) => void;
     onEditLabel: (accountId: string) => void;
     onDelete: (accountId: string) => void;
-    onExport?: (accountId: string) => void;
     onReorder?: (accountIds: string[]) => void;
 }
 
@@ -44,7 +43,6 @@ interface SortableAccountCardProps {
     onRefresh: () => void;
     onEditLabel: () => void;
     onDelete: () => void;
-    onExport?: () => void;
 }
 
 function SortableAccountCard({
@@ -56,7 +54,6 @@ function SortableAccountCard({
     onRefresh,
     onEditLabel,
     onDelete,
-    onExport,
 }: SortableAccountCardProps) {
     const {
         attributes,
@@ -85,7 +82,6 @@ function SortableAccountCard({
                 onRefresh={onRefresh}
                 onEditLabel={onEditLabel}
                 onDelete={onDelete}
-                onExport={onExport}
                 dragHandleProps={{ attributes, listeners }}
                 isDragging={isDragging}
             />
@@ -102,7 +98,6 @@ function AccountGrid({
     onRefresh,
     onEditLabel,
     onDelete,
-    onExport,
     onReorder,
 }: AccountGridProps) {
     const { t } = useTranslation();
@@ -174,7 +169,6 @@ function AccountGrid({
                             onRefresh={() => onRefresh(account.id)}
                             onEditLabel={() => onEditLabel(account.id)}
                             onDelete={() => onDelete(account.id)}
-                            onExport={onExport ? () => onExport(account.id) : undefined}
                         />
                     ))}
                 </div>

@@ -4,7 +4,6 @@ import { RouterProvider } from 'react-router/dom';
 import Layout from './components/layout/Layout';
 import Accounts from './pages/Accounts';
 import Settings from './pages/Settings';
-import MenuBarDashboard from './pages/MenuBarDashboard';
 import ThemeManager from './components/common/ThemeManager';
 import { useEffect } from 'react';
 import { useConfigStore } from './stores/useConfigStore';
@@ -16,7 +15,6 @@ import { isTauri } from './utils/env';
 import { installMainWindowPresentation } from './utils/mainWindowPresentation';
 
 const router = createBrowserRouter([
-  { path: '/menubar', element: <MenuBarDashboard /> },
   {
     path: '/',
     element: <Layout />,
@@ -48,10 +46,8 @@ function App() {
 
   useEffect(() => {
     loadConfig();
-    if (window.location.pathname !== '/menubar') {
-      fetchCurrentAccount();
-      fetchAccounts();
-    }
+    fetchCurrentAccount();
+    fetchAccounts();
   }, [loadConfig, fetchCurrentAccount, fetchAccounts]);
 
   // Sync language from config
@@ -68,9 +64,6 @@ function App() {
     const unlistenPromises: Promise<() => void>[] = [];
 
     unlistenPromises.push(listen('config://updated', () => { loadConfig(); }));
-    if (window.location.pathname === '/menubar') {
-      return () => { Promise.all(unlistenPromises).then(listeners => listeners.forEach(unlisten => unlisten())); };
-    }
     unlistenPromises.push(installMainWindowPresentation(route => router.navigate(route, { flushSync: true })));
 
     unlistenPromises.push(
