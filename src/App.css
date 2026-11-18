@@ -16,7 +16,7 @@
 .dark input.toggle.toggle-warning { --app-toggle-active: #d97706; }
 .dark input.toggle.toggle-error { --app-toggle-active: #dc2626; }
 
-/* 禁止过度滚动和橡皮筋效果 */
+/* Base viewport setup without horizontal page scroll */
 html,
 body {
   overscroll-behavior: none;
@@ -26,6 +26,11 @@ body {
   margin: 0;
   padding: 0;
   border: none;
+  overflow-wrap: break-word;
+}
+
+:where(a, code) {
+  overflow-wrap: anywhere;
 }
 
 html.panel-window,
@@ -41,10 +46,9 @@ html:not(.panel-window) {
 }
 
 html.dark:not(.panel-window) {
-  background-color: #1d232a;
+  background-color: #020617;
 }
 
-/* 全局样式 */
 body:not(.panel-window) {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -55,34 +59,29 @@ body:not(.panel-window) {
   background-color: #FAFBFC;
 }
 
-/* Dark mode override for body strictly */
 .dark body:not(.panel-window) {
-  background-color: #1d232a;
-  /* matches base-300 commonly used */
+  background-color: #020617;
 }
 
 #root {
   width: 100%;
   height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   overscroll-behavior: none;
 }
 
-/* 移除默认的 tap 高亮 */
 * {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* 只移除链接的默认下划线，不强制颜色 */
 a {
   text-decoration: none;
 }
 
-/* 滚动条优化 - 彻底隐藏但保留功能 */
+/* Subtle 6px scrollbar for visual scroll cues */
 ::-webkit-scrollbar {
-  width: 0px;
-  background: transparent;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -90,18 +89,15 @@ a {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.1);
+  background-color: rgba(100, 116, 139, 0.25);
   border-radius: 99px;
-  border: 3px solid transparent;
-  background-clip: content-box;
-  transition: background-color 0.2s;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: rgba(100, 116, 139, 0.45);
 }
 
-/* View Transitions API 主题切换动画 */
+/* View Transitions API theme animation */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
@@ -124,7 +120,7 @@ a {
   z-index: 1;
 }
 
-/* 暗色模式下 select 下拉菜单样式 */
+/* Dark mode select dropdown styling */
 .dark select,
 .dark select option,
 .dark select optgroup {

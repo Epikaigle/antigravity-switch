@@ -1,36 +1,31 @@
-import { Users, Settings } from 'lucide-react';
+import { Moon, Settings, Sun, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { normalizeLanguage } from '../../i18n';
 import { useConfigStore } from '../../stores/useConfigStore';
-import { isTauri, isLinux } from '../../utils/env';
+import { isLinux, isMac, isTauri } from '../../utils/env';
 import { NavLogo } from './NavLogo';
 import { NavMenu } from './NavMenu';
-import { NavSettings } from './NavSettings';
 import type { NavItem } from './constants';
 
-/**
- * Navbar 主组件
- * 
- * 职责: 只负责布局 and 状态管理,不处理响应式细节
- * 响应式逻辑由各个子组件独立处理
- */
 function Navbar() {
     const { t } = useTranslation();
     const { config, saveConfig } = useConfigStore();
+    const showMacInset = isTauri() && isMac();
 
-    // 创建导航项(包含翻译后的标签)
     const navItems: NavItem[] = [
         { path: '/', label: t('nav.accounts'), icon: Users, priority: 'high' },
         { path: '/settings', label: t('nav.settings'), icon: Settings, priority: 'high' },
     ];
 
-    // 主题切换逻辑(带 View Transition 动画)
+    const isCurrentlyDark =
+        config?.theme === 'dark' ||
+        (config?.theme !== 'light' &&
+            typeof document !== 'undefined' &&
+            document.documentElement.classList.contains('dark'));
+
     const toggleTheme = async (event: React.MouseEvent<HTMLButtonElement>) => {
         if (!config) return;
+        const newTheme = isCurrentlyDark ? 'light' : 'dark';
 
-        const newTheme = config.theme === 'light' ? 'dark' : 'light';
-
-        // Use View Transition API if supported, but skip on Linux (may cause crash)
         if ('startViewTransition' in document && !isLinux()) {
             const x = event.clientX;
             const y = event.clientY;
@@ -41,11 +36,7 @@ function Navbar() {
 
             // @ts-ignore
             const transition = document.startViewTransition(async () => {
-                saveConfig({
-                    ...config,
-                    theme: newTheme,
-                    language: config.language
-                }, true);
+                await saveConfig({ ...config, theme: newTheme }, true);
             });
 
             transition.ready.then(() => {
@@ -55,77 +46,50 @@ function Navbar() {
                     : [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`];
 
                 document.documentElement.animate(
+                    { clipPath },
                     {
-                        clipPath: clipPath
-                    },
-                    {
-                        duration: 500,
+                        duration: 450,
                         easing: 'ease-in-out',
                         fill: 'forwards',
-                        pseudoElement: isDarkMode ? '::view-transition-old(root)' : '::view-transition-new(root)'
+                        pseudoElement: isDarkMode ? '::view-transition-old(root)' : '::view-transition-new(root)',
                     }
                 );
             });
         } else {
-            // Fallback: direct switch (Linux or browsers without View Transition)
-            await saveConfig({
-                ...config,
-                theme: newTheme,
-                language: config.language
-            }, true);
+            await saveConfig({ ...config, theme: newTheme }, true);
         }
     };
 
-    // 语言切换逻辑
-    const handleLanguageChange = async (langCode: string) => {
-        if (!config) return;
-
-        await saveConfig({
-            ...config,
-            language: langCode,
-            theme: config.theme
-        }, true);
-    };
+    const themeLabel = isCurrentlyDark ? t('nav.theme_to_light') : t('nav.theme_to_dark');
 
     return (
-        <nav
-            style={{ position: 'sticky', top: 0, zIndex: 150 }}
-            className="pt-9 transition-all duration-200 bg-[#FAFBFC] dark:bg-base-300"
+        <header
+            className={`sticky top-0 z-[150] border-b border-gray-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/90 backdrop-blur transition-colors ${showMacInset ? 'pt-9' : ''}`}
         >
-            {/* 窗口拖拽区域 - Tauri 专用 */}
-            {isTauri() && (
-                <div
-                    className="absolute top-9 left-0 right-0 h-16"
-                    style={{ zIndex: 5, backgroundColor: 'rgba(0,0,0,0.001)' }}
-                    data-tauri-drag-region
-                />
-            )}
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 min-h-14 py-2 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center min-w-0 shrink-0">
+                    <NavLogo />
+                </div>
 
-            <div className="max-w-7xl mx-auto px-4 relative" style={{ zIndex: 10 }}>
-                {/* 三项主导航独立绝对居中，避免两侧内容宽度不同造成视觉偏右 */}
-                <div className="relative flex h-16 items-center justify-between gap-4">
-                    {/* Logo - 自然左对齐 */}
-                    <div className="flex items-center shrink-0 min-w-0">
-                        <NavLogo />
-                    </div>
+                <div className="flex flex-wrap items-center gap-2 ml-auto">
+                    <NavMenu navItems={navItems} />
 
-                    {/* 导航菜单 - 自己处理响应式 */}
-                    <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2">
-                        <NavMenu navItems={navItems} />
-                    </div>
-
-                    {/* 设置按钮 - 自己处理响应式 */}
-                    <div className="ml-auto shrink-0">
-                        <NavSettings
-                            theme={(config?.theme as 'light' | 'dark') || 'light'}
-                            currentLanguage={normalizeLanguage(config?.language)}
-                            onThemeToggle={toggleTheme}
-                            onLanguageChange={handleLanguageChange}
-                        />
-                    </div>
+                    <button
+                        type="button"
+                        onClick={toggleTheme}
+                        aria-label={themeLabel}
+                        title={themeLabel}
+                        className="min-h-9 min-w-9 px-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-200 flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                        {isCurrentlyDark ? (
+                            <Sun className="w-4 h-4" aria-hidden="true" />
+                        ) : (
+                            <Moon className="w-4 h-4" aria-hidden="true" />
+                        )}
+                    </button>
                 </div>
             </div>
-        </nav>
+        </header>
     );
 }
 

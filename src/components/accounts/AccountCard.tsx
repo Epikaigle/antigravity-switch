@@ -1,29 +1,37 @@
-import { weeklyQuotaItems, modelQuotaForWindow } from '../../utils/menuBarQuota';
 import { useMemo } from 'react';
-import { Download, ArrowRightLeft, RefreshCw, Trash2, Lock, Ban, Diamond, Gem, Circle, Sparkles, Tag, Clock, GripVertical, BrainCircuit, CheckCircle2 } from 'lucide-react';
+import {
+    ArrowRightLeft,
+    Ban,
+    CheckCircle2,
+    Circle,
+    Clock,
+    Diamond,
+    Download,
+    Gem,
+    GripVertical,
+    Lock,
+    RefreshCw,
+    Tag,
+    Trash2,
+} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Account } from '../../types/account';
 import { cn } from '../../utils/cn';
-import { useTranslation } from 'react-i18next';
-import { useConfigStore } from '../../stores/useConfigStore';
-import { QuotaItem } from './QuotaItem';
-import { getDisplayQuotaModels } from '../../config/modelConfig';
-import { getValidationBlockedStatusLabel } from './accountValidationStatus';
-import AccountSelection from './AccountSelection';
 import { getAccountTier } from '../../utils/accountTier';
+import { resolveAccountQuotaPools } from '../../utils/menuBarQuota';
+import { getValidationBlockedStatusLabel } from './accountValidationStatus';
+import { QuotaPoolCard } from './QuotaItem';
 
 interface AccountCardProps {
     account: Account;
-    selected: boolean;
-    onSelect: () => void;
     isCurrent: boolean;
     isRefreshing: boolean;
     isSwitching?: boolean;
-    onSwitch: (targetIde?: string) => void;
+    onSwitch: () => void;
     onRefresh: () => void;
     onEditLabel: () => void;
     onDelete: () => void;
     onExport?: () => void;
-    quotaWindow?: '5h' | 'weekly';
     dragHandleProps?: {
         attributes?: any;
         listeners?: any;
@@ -33,9 +41,7 @@ interface AccountCardProps {
 
 function AccountCard({
     account,
-    selected,
-    onSelect,
-    isCurrent: propIsCurrent,
+    isCurrent,
     isRefreshing,
     isSwitching = false,
     onSwitch,
@@ -43,266 +49,237 @@ function AccountCard({
     onEditLabel,
     onDelete,
     onExport,
-    quotaWindow,
     dragHandleProps,
     isDragging = false,
 }: AccountCardProps) {
     const { t } = useTranslation();
-    const { config } = useConfigStore();
     const isDisabled = Boolean(account.disabled);
     const validationBlockedLabel = getValidationBlockedStatusLabel(account.validation_blocked_reason, t);
+    const tier = getAccountTier(account);
+    const pools = useMemo(() => resolveAccountQuotaPools(account.quota), [account.quota]);
 
-    // Use the prop directly from parent component
-    const isCurrent = propIsCurrent;
+    const switchLabel = isSwitching ? t('accounts.switching') : t('accounts.switch_cta');
+    const refreshLabel = t('accounts.action_refresh');
+    const noteLabel = t('accounts.action_note');
+    const exportLabel = t('accounts.action_export');
+    const deleteLabel = t('accounts.action_delete');
 
-    // 获取统一解析后的展示模型列表 (严格对齐用户自定义勾选)
-    const displayModels = useMemo(() => {
-        return getDisplayQuotaModels(account.quota?.models, config?.pinned_quota_models?.models);
-    }, [config?.pinned_quota_models?.models, account.quota?.models]);
-
-    // 解析周配额项 (当处于 weekly 视图时)
-    const weeklyItems = useMemo(() => {
-        if (quotaWindow !== 'weekly') return [];
-        return weeklyQuotaItems(account.quota).map(item => ({ ...item,
-            poolBadge: item.shared ? t('accounts.shared_pool') : t('accounts.dedicated_pool'),
-            Icon: item.isClaude ? BrainCircuit : Sparkles,
-        }));
-    }, [quotaWindow, account.quota?.quota_groups, t]);
-
-    const isModelProtected = (key?: string) => {
-        if (!config?.quota_protection?.enabled) return false;
-        if (!key) return false;
-        return account.protected_models?.includes(key);
-    };
+    const lastUpdatedLabel = account.quota?.last_updated
+        ? new Date(account.quota.last_updated * 1000).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+          })
+        : null;
 
     return (
-        <div className={cn(
-            "h-full w-full flex flex-col p-3 rounded-xl border transition-all hover:shadow-md relative overflow-hidden",
-            isCurrent
-                ? "bg-blue-50/80 border-blue-500/80 dark:bg-blue-950/40 dark:border-blue-400/80"
-                : "bg-white dark:bg-base-100 border-gray-200 dark:border-base-300",
-            (isRefreshing || isDisabled) && "opacity-70",
-            isDragging && "shadow-xl ring-2 ring-blue-500/30"
-        )}>
-            {/* Header: Grip Handle (left) + Column (Row 1: Selection + Full Email, Row 2: Badges + Date) */}
-            <div className="flex-none flex items-start gap-1.5 mb-2.5">
-                {dragHandleProps && (
-                    <div
-                        {...dragHandleProps.attributes}
-                        {...dragHandleProps.listeners}
-                        className="flex items-center justify-center w-5 h-5 rounded cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-base-200 transition-colors shrink-0"
-                        title={t('accounts.drag_to_reorder', '拖拽调整账号顺序')}
-                    >
-                        <GripVertical className="w-3.5 h-3.5" />
-                    </div>
-                )}
-                <div className="min-w-0 flex-1 flex flex-col gap-1.5">
-                    {/* Row 1: Selection + Email (占据整行，不再被时间戳挤压截断) */}
-                    <div className="flex items-center gap-1.5 min-w-0 w-full">
-                        <AccountSelection
-                            checked={selected}
-                            onChange={onSelect}
-                            disabled={isRefreshing}
-                            label={t('accounts.select_account', { email: account.email })}
-                        />
-                        <h3 className={cn(
-                            "text-sm truncate flex-1 min-w-0",
-                            isCurrent ? "font-bold text-blue-800 dark:text-blue-300" : "font-semibold text-gray-900 dark:text-base-content"
-                        )} title={account.email}>
+        <article
+            className={cn(
+                '@container w-full rounded-2xl border-2 p-4 sm:p-5 transition-shadow relative',
+                isCurrent
+                    ? 'border-blue-500 bg-blue-50/40 dark:border-blue-400 dark:bg-blue-950/25 shadow-sm'
+                    : 'border-transparent ring-1 ring-gray-200/90 dark:ring-slate-800 bg-white dark:bg-slate-900 shadow-xs hover:ring-gray-300 dark:hover:ring-slate-700',
+                (isRefreshing || isDisabled) && 'opacity-80',
+                isDragging && 'shadow-xl ring-2 ring-blue-500/40',
+            )}
+        >
+            <header className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                <div className="min-w-0 flex-1 flex items-start gap-2.5">
+                    {dragHandleProps && (
+                        <button
+                            type="button"
+                            {...dragHandleProps.attributes}
+                            {...dragHandleProps.listeners}
+                            aria-label={t('accounts.drag_to_reorder')}
+                            title={t('accounts.drag_to_reorder')}
+                            className="min-h-8 min-w-8 mt-0.5 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 cursor-grab active:cursor-grabbing shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        >
+                            <GripVertical className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                            {isCurrent && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-600 text-white text-xs font-semibold shadow-2xs">
+                                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                                    <span>{t('accounts.active_badge')}</span>
+                                </span>
+                            )}
+
+                            {tier === 'ultra' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[11px] font-bold">
+                                    <Gem className="w-3 h-3 fill-current" aria-hidden="true" />
+                                    <span>ULTRA</span>
+                                </span>
+                            ) : tier === 'pro' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[11px] font-bold">
+                                    <Diamond className="w-3 h-3 fill-current" aria-hidden="true" />
+                                    <span>PRO</span>
+                                </span>
+                            ) : (
+                                <span
+                                    title={tier === 'unknown' ? t('accounts.unknown_hint') : undefined}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 text-[11px] font-semibold border border-gray-200 dark:border-slate-700"
+                                >
+                                    <Circle className="w-2.5 h-2.5" aria-hidden="true" />
+                                    <span>{t(`accounts.${tier}`)}</span>
+                                </span>
+                            )}
+
+                            {account.custom_label && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 text-[11px] font-semibold border border-amber-200/70 dark:border-amber-800/50">
+                                    <Tag className="w-3 h-3" aria-hidden="true" />
+                                    <span>{account.custom_label}</span>
+                                </span>
+                            )}
+
+                            {isDisabled && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 text-[11px] font-bold">
+                                    <Ban className="w-3 h-3" aria-hidden="true" />
+                                    <span>{t('accounts.disabled')}</span>
+                                </span>
+                            )}
+
+                            {account.quota?.is_forbidden && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-[11px] font-bold">
+                                    <Lock className="w-3 h-3" aria-hidden="true" />
+                                    <span>{t('accounts.forbidden')}</span>
+                                </span>
+                            )}
+
+                            {account.validation_blocked && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 text-[11px] font-bold">
+                                    <Clock className="w-3 h-3" aria-hidden="true" />
+                                    <span>{validationBlockedLabel}</span>
+                                </span>
+                            )}
+                        </div>
+
+                        <h3 className="text-base font-semibold text-gray-900 dark:text-slate-100 break-words">
                             {account.email}
                         </h3>
-                        {isCurrent && (
-                            <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                        {account.name && account.name.trim() !== account.email && (
+                            <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{account.name}</p>
                         )}
-                    </div>
-
-                    {/* Row 2: Badges + Last Used Date (靠右) */}
-                    <div className="flex items-center justify-between w-full gap-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                            {/* 1. 订阅类型徽章 (始终置前，上下对齐) */}
-                            {(() => {
-                                const tier = getAccountTier(account);
-                                if (tier === 'ultra') {
-                                    return (
-                                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[9px] font-bold shadow-sm">
-                                            <Gem className="w-2.5 h-2.5 fill-current" />
-                                            ULTRA
-                                        </span>
-                                    );
-                                } else if (tier === 'pro') {
-                                    return (
-                                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[9px] font-bold shadow-sm">
-                                            <Diamond className="w-2.5 h-2.5 fill-current" />
-                                            PRO
-                                        </span>
-                                    );
-                                } else {
-                                    return (
-                                        <span title={tier === 'unknown' ? t('accounts.unknown_hint') : undefined} className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 text-[9px] font-bold shadow-sm border border-gray-200 dark:border-white/10">
-                                            <Circle className="w-2.5 h-2.5" />
-                                            {t(`accounts.${tier}`)}
-                                        </span>
-                                    );
-                                }
-                            })()}
-
-                            {/* 2. 自定义标签 */}
-                            {account.custom_label && (
-                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[9px] font-bold shadow-sm border border-orange-200/50">
-                                    <Tag className="w-2.5 h-2.5" />
-                                    {account.custom_label}
-                                </span>
-                            )}
-
-                            {/* 3. 额外状态标签 (全部后置，不挤占 Pro 对齐位置) */}
-                            {isCurrent && (
-                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[9px] font-bold shadow-sm border border-blue-200/50 dark:border-blue-700/50">
-                                    <CheckCircle2 className="w-2.5 h-2.5" />
-                                    {t('accounts.current_active', '当前选择')}
-                                </span>
-                            )}
-                            {isDisabled && (
-                                <span
-                                    className="px-1.5 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 text-[9px] font-bold flex items-center gap-1 shadow-sm border border-rose-200/50"
-                                >
-                                    <Ban className="w-2.5 h-2.5" />
-                                    {t('accounts.disabled').toUpperCase()}
-                                </span>
-                            )}
-                            {account.quota?.is_forbidden && (
-                                <span className="px-1.5 py-0.5 rounded-md bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-[9px] font-bold flex items-center gap-1 shadow-sm border border-red-200/50">
-                                    <Lock className="w-2.5 h-2.5" />
-                                    {t('accounts.forbidden').toUpperCase()}
-                                </span>
-                            )}
-                            {account.validation_blocked && (
-                                <span className="px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-[9px] font-bold flex items-center gap-1 shadow-sm border border-amber-200/50">
-                                    <Clock className="w-2.5 h-2.5" />
-                                    {validationBlockedLabel.toUpperCase()}
-                                </span>
-                            )}
-                        </div>
-                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-mono shrink-0 whitespace-nowrap">
-                            {new Date(account.last_used * 1000).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                        </span>
                     </div>
                 </div>
-            </div>
 
-            {/* 配额展示 */}
-            <div className="flex-1 px-2 mb-2 flex flex-col justify-center overflow-y-auto scrollbar-none">
-                {isDisabled || account.quota?.is_forbidden || account.validation_blocked ? (
-                    <div className="flex flex-col items-center justify-center gap-1.5 h-full py-6 text-center my-auto">
-                        <div className={cn(
-                            "flex items-center gap-1.5",
-                            account.validation_blocked ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"
-                        )}>
-                            {account.validation_blocked ? <Clock className="w-4 h-4" /> : (isDisabled ? <Ban className="w-4 h-4" /> : <Lock className="w-4 h-4" />)}
-                            <span className="text-[11px] font-bold">
-                                {account.validation_blocked ? validationBlockedLabel : (isDisabled ? t('accounts.status.disabled') : t('accounts.forbidden_msg'))}
-                            </span>
-                        </div>
-                    </div>
-                ) : quotaWindow === 'weekly' && weeklyItems.length > 0 ? (
-                    <div className="grid grid-cols-1 gap-2 content-start my-auto">
-                        {weeklyItems.map((item) => (
-                            <QuotaItem
-                                key={item.id}
-                                label={
-                                    <span className="flex items-center gap-1.5 truncate">
-                                        <span>{item.title}</span>
-                                        <span className="shrink-0">
-                                            {item.poolBadge}
-                                        </span>
-                                    </span>
-                                }
-                                title={`${item.title} (${item.poolBadge})`}
-                                percentage={item.percentage}
-                                resetTime={item.resetTime}
-                                Icon={item.Icon}
-                            />
-                        ))}
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 gap-2 content-start my-auto">
-                        {displayModels.map((model) => {
-                            const resolved = modelQuotaForWindow(model.data, account.quota, quotaWindow);
-                            return (
-                                <QuotaItem
-                                    key={model.id}
-                                    label={model.label}
-                                    percentage={resolved.percentage}
-                                    resetTime={resolved.resetTime}
-                                    windowLabel={resolved.window === 'weekly' ? t('accounts.quota_window_weekly_short') : undefined}
-                                    isProtected={isModelProtected(model.protectedKey)}
-                                    Icon={model.Icon}
-                                />
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-
-            {/* Footer: Actions Only */}
-            <div className="flex-none flex items-center justify-center pt-2 pb-1 border-t border-gray-100 dark:border-base-200 mt-auto">
-                <div className="flex items-center justify-center gap-2 w-full">
-                    <button
-                        className={cn(
-                            "p-1.5 rounded-lg transition-all text-gray-400 dark:text-gray-500",
-                            isSwitching
-                                ? "text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/20 cursor-not-allowed"
-                                : "hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
-                        )}
-                        onClick={(e) => { e.stopPropagation(); onSwitch(); }}
-                        title={isDisabled ? t('accounts.disabled_tooltip') : (isSwitching ? t('common.loading') : t('accounts.switch_account'))}
-                        disabled={isSwitching || isDisabled}
-                    >
-                        <ArrowRightLeft className={cn("w-3.5 h-3.5", isSwitching && "animate-spin")} />
-                    </button>
-                    <button
-                        className={cn(
-                            "p-1.5 rounded-lg transition-all text-gray-400 dark:text-gray-500",
-                            isRefreshing
-                                ? "text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-900/20 cursor-not-allowed"
-                                : "hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
-                        )}
-                        onClick={(e) => { e.stopPropagation(); onRefresh(); }}
-                        disabled={isRefreshing || isDisabled}
-                        title={isDisabled ? t('accounts.disabled_tooltip') : t('accounts.refresh_quota')}
-                    >
-                        <RefreshCw className={cn("w-3.5 h-3.5", isRefreshing && "animate-spin")} />
-                    </button>
-                    <button
-                        className="p-1.5 rounded-lg transition-all text-gray-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:text-orange-400 dark:hover:bg-orange-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
-                        onClick={(e) => { e.stopPropagation(); onEditLabel(); }}
-                        disabled={isRefreshing || isSwitching}
-                        title={t('accounts.edit_remark', '编辑备注')}
-                        aria-label={`${t('accounts.edit_remark', '编辑备注')} ${account.email}`}
-                    >
-                        <Tag className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                        className="p-1.5 rounded-lg transition-all text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
-                        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                        disabled={isRefreshing || isSwitching}
-                        title={t('accounts.delete_account')}
-                        aria-label={`${t('accounts.delete_account')} ${account.email}`}
-                    >
-                        <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                    {onExport && (
+                <div className="shrink-0 flex items-center">
+                    {isCurrent ? (
+                        <span className="min-h-9 px-3.5 py-2 rounded-xl bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                            <span>{t('accounts.currently_used')}</span>
+                        </span>
+                    ) : (
                         <button
-                            className="p-1.5 rounded-lg transition-all text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30"
-                            title={t('accounts.export_account')}
-                            aria-label={t('accounts.export_account')}
-                            onClick={event => { event.stopPropagation(); onExport(); }}
+                            type="button"
+                            onClick={onSwitch}
+                            disabled={isSwitching || isDisabled}
+                            aria-label={`${switchLabel} (${account.email})`}
+                            title={isDisabled ? t('accounts.disabled_tooltip') : switchLabel}
+                            className="min-h-9 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold shadow-xs inline-flex items-center gap-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
                         >
-                            <Download className="w-3.5 h-3.5" />
+                            <ArrowRightLeft className={cn('w-4 h-4 shrink-0', isSwitching && 'animate-spin')} aria-hidden="true" />
+                            <span>{switchLabel}</span>
                         </button>
                     )}
                 </div>
+            </header>
+
+            <div>
+                {isDisabled || account.quota?.is_forbidden || account.validation_blocked ? (
+                    <div className="rounded-xl border border-rose-200/80 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/30 p-3.5 flex items-center gap-2.5 text-sm text-rose-700 dark:text-rose-300">
+                        {account.validation_blocked ? (
+                            <Clock className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                        ) : isDisabled ? (
+                            <Ban className="w-4 h-4 shrink-0" aria-hidden="true" />
+                        ) : (
+                            <Lock className="w-4 h-4 shrink-0" aria-hidden="true" />
+                        )}
+                        <span className="font-medium">
+                            {account.validation_blocked
+                                ? validationBlockedLabel
+                                : isDisabled
+                                  ? t('accounts.status.disabled')
+                                  : t('accounts.forbidden_msg')}
+                        </span>
+                    </div>
+                ) : pools.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-200 dark:border-slate-700 p-4 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-slate-400">
+                        <span>{t('accounts.no_quota_yet')}</span>
+                        <button
+                            type="button"
+                            onClick={onRefresh}
+                            disabled={isRefreshing}
+                            className="min-h-8 px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-200 font-medium inline-flex items-center gap-1.5 transition-colors"
+                        >
+                            <RefreshCw className={cn('w-3.5 h-3.5', isRefreshing && 'animate-spin')} aria-hidden="true" />
+                            <span>{refreshLabel}</span>
+                        </button>
+                    </div>
+                ) : (
+                    <div className={cn('grid gap-3', pools.length > 1 ? 'grid-cols-1 @[600px]:grid-cols-2' : 'grid-cols-1')}>
+                        {pools.map((pool) => (
+                            <QuotaPoolCard key={pool.id} pool={pool} />
+                        ))}
+                    </div>
+                )}
             </div>
-        </div >
+
+            <footer className="mt-4 pt-3 border-t border-gray-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs text-gray-500 dark:text-slate-400">
+                    {lastUpdatedLabel ? t('accounts.updated_at', { time: lastUpdatedLabel }) : ''}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                        type="button"
+                        onClick={onRefresh}
+                        disabled={isRefreshing || isDisabled}
+                        aria-label={`${refreshLabel} (${account.email})`}
+                        className="min-h-8 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-white inline-flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                        <RefreshCw className={cn('w-3.5 h-3.5 shrink-0', isRefreshing && 'animate-spin')} aria-hidden="true" />
+                        <span>{refreshLabel}</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={onEditLabel}
+                        disabled={isRefreshing || isSwitching}
+                        aria-label={`${noteLabel} (${account.email})`}
+                        className="min-h-8 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-white inline-flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                        <Tag className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                        <span>{noteLabel}</span>
+                    </button>
+
+                    {onExport && (
+                        <button
+                            type="button"
+                            onClick={onExport}
+                            disabled={isSwitching}
+                            aria-label={`${exportLabel} (${account.email})`}
+                            className="min-h-8 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-white inline-flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        >
+                            <Download className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                            <span>{exportLabel}</span>
+                        </button>
+                    )}
+
+                    <button
+                        type="button"
+                        onClick={onDelete}
+                        disabled={isRefreshing || isSwitching}
+                        aria-label={`${deleteLabel} (${account.email})`}
+                        className="min-h-8 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 inline-flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                    >
+                        <Trash2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                        <span>{deleteLabel}</span>
+                    </button>
+                </div>
+            </footer>
+        </article>
     );
 }
 

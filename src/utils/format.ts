@@ -7,7 +7,7 @@ export function getQuotaColor(percentage: number): string {
 export function parseFlexibleDate(dateStr: string | undefined | null): Date | null {
     if (!dateStr || dateStr.trim() === '') return null;
     const trimmed = dateStr.trim();
-    // 兼容纯数字 Unix 时间戳（秒或毫秒）
+    // Support numeric Unix timestamps (seconds or milliseconds).
     if (/^\d+$/.test(trimmed)) {
         const num = parseInt(trimmed, 10);
         return new Date(trimmed.length <= 10 ? num * 1000 : num);
@@ -16,23 +16,35 @@ export function parseFlexibleDate(dateStr: string | undefined | null): Date | nu
     return isNaN(parsed.getTime()) ? null : parsed;
 }
 
-export function formatTimeRemaining(dateStr: string): string {
+export function formatTimeRemaining(dateStr: string, lang = 'fr'): string {
     const targetDate = parseFlexibleDate(dateStr);
-    if (!targetDate) return '0h 0m';
+    if (!targetDate) return '';
 
-    const now = new Date();
-    const diffMs = targetDate.getTime() - now.getTime();
+    const normalizedLang = lang.toLowerCase().startsWith('zh')
+        ? 'zh'
+        : lang.toLowerCase().startsWith('en')
+            ? 'en'
+            : 'fr';
 
-    if (diffMs <= 0) return '0h 0m';
+    const diffMs = targetDate.getTime() - Date.now();
+    if (diffMs <= 0) {
+        return normalizedLang === 'fr' ? 'Imminent' : normalizedLang === 'zh' ? '即将重置' : 'Due';
+    }
 
-    const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    const totalMins = Math.floor(diffMs / 60_000);
+    const diffHrs = Math.floor(totalMins / 60);
+    const diffMins = totalMins % 60;
 
     if (diffHrs >= 24) {
         const diffDays = Math.floor(diffHrs / 24);
         const remainingHrs = diffHrs % 24;
-        return `${diffDays}d ${remainingHrs}h`;
+        const dayUnit = normalizedLang === 'fr' ? 'j' : normalizedLang === 'zh' ? '天' : 'd';
+        return `${diffDays}${dayUnit} ${remainingHrs}h`;
     }
 
-    return `${diffHrs}h ${diffMins}m`;
+    if (diffHrs > 0) {
+        return `${diffHrs}h ${diffMins}m`;
+    }
+
+    return `${Math.max(1, diffMins)}m`;
 }

@@ -6,9 +6,9 @@ import { normalizeLanguage } from '../i18n';
 import { request } from '../utils/request';
 import { isTauri } from '../utils/env';
 import { useConfigStore } from '../stores/useConfigStore';
-import { aggregateMenuBar, menuBarAccount, quotaDisplay, quotaTone, type MenuBarSnapshot, type QuotaReason, type QuotaWindow } from '../utils/menuBarOverview';
+import { menuBarAccount, quotaDisplay, quotaTone, type MenuBarSnapshot, type QuotaReason, type QuotaWindow } from '../utils/menuBarOverview';
 import '../components/menubar/MenuBarDashboard.css';
-import { DEFAULT_MENU_BAR_PREFERENCES, menuBarResetTimeDisplay, type MenuBarPreferences } from '../types/config';
+import { DEFAULT_MENU_BAR_PREFERENCES, type MenuBarPreferences } from '../types/config';
 import logo from '../assets/logo.png';
 
 interface Appearance { platform?: string; native_material: boolean; reduced_transparency: boolean; high_contrast: boolean; material_kind?: string }
@@ -192,17 +192,15 @@ export default function MenuBarDashboard() {
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const [page, setPage] = useState(0);
-  const [capacity, setCapacity] = useState(3);
+  const [capacity, setCapacity] = useState(6);
   const content = useRef<HTMLDivElement>(null);
   const generation = useRef(0);
   const operation = useRef(false);
   const mounted = useRef(true);
   const preferences = useMemo(() => ({ ...DEFAULT_MENU_BAR_PREFERENCES, ...config?.menu_bar }), [config?.menu_bar]);
-  const resetTimeDisplay = menuBarResetTimeDisplay(preferences);
-  const scope = preferences.quota_scope;
+  const resetTimeDisplay = config?.menu_bar?.reset_time_display ?? 'always';
   const periods: QuotaWindow[] = [...(preferences.show_session ? ['5h' as const] : []), ...(preferences.show_weekly ? ['weekly' as const] : [])];
   const families = preferences.display_scope === 'all' ? ['gemini', 'other'] as const : [preferences.display_scope];
-  const scopeName = scope === 'gemini' ? copy.gemini : scope === 'other' ? copy.other : copy.allFamilies;
   const windowName = (window: QuotaWindow) => window === '5h' ? copy.win5h : copy.winWeekly;
   const reasonName = (reason: QuotaReason | null) => reason ? copy.reasons[reason] : '';
   const resetLabel = (reset: string) => {
@@ -255,13 +253,11 @@ export default function MenuBarDashboard() {
     if (!content.current) return;
     const element = content.current;
     const measure = () => { const accountArea = element.querySelector('.mb-accounts');
-      if (accountArea) { const rows = [...accountArea.querySelectorAll('.mb-account-row')]; const rowHeight = rows.length ? Math.max(...rows.map(row => row.getBoundingClientRect().height + parseFloat(getComputedStyle(row).marginBottom))) : 86; setCapacity(Math.max(1, Math.floor((accountArea.clientHeight + 6) / rowHeight))); } };
+      if (accountArea) { const rows = [...accountArea.querySelectorAll('.mb-account-row')]; const rowHeight = rows.length ? Math.max(...rows.map(row => row.getBoundingClientRect().height + parseFloat(getComputedStyle(row).marginBottom))) : 86; setCapacity(Math.max(4, Math.floor((accountArea.clientHeight + 6) / rowHeight))); } };
     const observer = new ResizeObserver(measure); observer.observe(element); measure();
     return () => observer.disconnect();
   }, [loading, snapshot, preferences.display_scope, preferences.show_weekly]);
   const accounts = useMemo(() => (snapshot?.accounts || []).map(account => menuBarAccount(account, now, config?.refresh_interval)).filter(view => !preferences.hide_unavailable || view.switchable), [snapshot, now, config?.refresh_interval, preferences.hide_unavailable]);
-  const threshold = config?.quota_protection.threshold_percentage ?? 10;
-  const aggregate = (window: QuotaWindow) => aggregateMenuBar(accounts, scope, window, threshold);
   const pageCount = Math.max(1, Math.ceil(accounts.length / capacity));
   const visiblePage = Math.min(page, pageCount - 1);
   const visible = accounts.slice(visiblePage * capacity, (visiblePage + 1) * capacity);
@@ -279,7 +275,7 @@ export default function MenuBarDashboard() {
   };
   const switchAccount = async (id: string) => {
     const target = accounts.find(view => view.account.id === id);
-    if (operation.current || busy || !target?.switchable || (snapshot?.current_identity_source === 'running_app' && id === snapshot.current_account_id)) return;
+    if (operation.current || busy || !target?.switchable || id === snapshot?.current_account_id) return;
     operation.current = true; setSwitching(id); setError('');
     try {
       await request('switch_account', { accountId: id }); await reload();
@@ -294,18 +290,12 @@ export default function MenuBarDashboard() {
       <div className="mb-brand">{preferences.show_icons && <img src={logo} alt="" width="24" height="24" />}<div><span className="mb-eyebrow">Antigravity Switch</span></div></div>
       <div className="mb-header-actions"><button aria-label={copy.refreshAll} disabled={busy || loading} onClick={() => void refresh()}><RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} /></button><button aria-label={copy.settings} onClick={() => openPage('settings')}><Settings size={16} /></button></div>
     </header>
-    {preferences.show_aggregate && <section className="mb-overview" aria-label={copy.aggQuotas}>
-      <div className="mb-overview-heading"><h2>{copy.remainingQuota}</h2><span>{scopeName}  {copy.meanRemaining}</span></div>
-      {periods.map(window => { const data = aggregate(window); return <div className="mb-aggregate" key={window}>
-        <div><span>{windowName(window)}</span><span className="mb-availability">{copy.available}{data.usable}/{data.total}</span><span>{copy.remaining} <strong>{quotaDisplay(data.remaining)}</strong></span></div><Meter preferences={preferences} value={data.remaining} label={scopeName + ' ' + windowName(window)} />
-      </div>; })}
-    </section>}
     {error && <div className="mb-message error" role="alert">{error}{!refreshing && <button onClick={() => void reload()}>{copy.retryRead}</button>}</div>}
     <div className="mb-content" ref={content}>
-      <div className="mb-account-heading"><strong>{copy.accountsHeading}</strong><span>{copy.accountsCount(accounts.length)}{snapshot && (snapshot.current_identity_source === 'unavailable' || (snapshot.current_identity_source === 'running_app' && !snapshot.current_account_id)) && <span role="status">{'  ' + t('tray.identity_unavailable')}</span>}</span></div>
+      <div className="mb-account-heading"><strong>{copy.accountsHeading}</strong><span>{copy.accountsCount(accounts.length)}{snapshot && (snapshot.current_identity_source === 'unavailable' || !snapshot.current_account_id) && <span role="status">{'  ' + t('tray.identity_unavailable')}</span>}</span></div>
       <div className="mb-accounts">{loading ? <div className="mb-empty"><Loader2 size={18} className="animate-spin" />{copy.loading}</div> : !accounts.length ? <div className="mb-empty">{error ? copy.unavailable : copy.addHint}<button onClick={() => openPage('accounts')}>{copy.manageAccounts}</button></div> : visible.map(view => {
         const account = view.account; const selected = account.id === snapshot?.current_account_id;
-        const current = selected && snapshot?.current_identity_source === 'running_app';
+        const current = selected;
         const label = account.custom_label || account.name || account.email.split('@')[0];
         return <article className={'mb-account-row ' + (families.length === 2 ? 'has-families ' : '') + (preferences.show_weekly && preferences.display_scope !== 'other' && view.argonReported ? 'has-argon ' : '') + (current ? 'current ' : selected ? 'selected ' : '') + (account.disabled ? 'disabled ' : '') + (resetTimeDisplay === 'hover' ? 'hover-resets' : resetTimeDisplay === 'always' ? 'always-resets' : '')} key={account.id}>
           <div className="mb-account-identity"><div className="mb-account-label"><span className="mb-account-name"><span>{preferences.label_style === 'label_then_email' && account.custom_label ? account.custom_label : account.email}</span>{view.argonReported && !account.disabled && <i className="mb-argon-dot" role="img" aria-label={copy.argonAvailable} title={copy.argonAvailable} />}</span>{families.length === 1 && <small>{preferences.label_style === 'email_only' ? '' : preferences.label_style === 'label_then_email' && account.custom_label ? account.email : account.custom_label ? account.custom_label : ''}</small>}</div><button className="mb-account-switch" aria-label={copy.switchTo(label)} title={account.disabled ? copy.disabledLabel : selected ? snapshot?.current_identity_source === 'running_app' ? copy.verifiedRunning : copy.savedAccount : copy.switchAndReopen} disabled={current || busy || !view.switchable} onClick={() => void switchAccount(account.id)}>{switching === account.id ? <Loader2 size={12} className="animate-spin" /> : account.disabled ? <Ban size={12} /> : current ? <CheckCircle2 size={12} /> : <ArrowLeftRight size={12} />}{account.disabled ? copy.disabledLabel : current ? t('tray.current') : selected ? t('tray.saved') : copy.switchVerb}</button></div>

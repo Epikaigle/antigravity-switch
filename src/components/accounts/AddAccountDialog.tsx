@@ -483,15 +483,14 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
     return (
         <>
             <button
-                className="px-2.5 lg:px-4 py-2 bg-white dark:bg-base-100 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-2 shadow-sm border border-gray-200/50 dark:border-base-300"
+                type="button"
+                className="min-h-9 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center gap-2 shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950"
                 onClick={() => {
-                    console.log('AddAccountDialog button clicked');
                     setIsOpen(true);
                 }}
-                title={!showText ? t('accounts.add_account') : undefined}
             >
-                <Plus className="w-4 h-4" />
-                {showText && <span className="hidden lg:inline">{t('accounts.add_account')}</span>}
+                <Plus className="w-4 h-4 shrink-0" aria-hidden="true" />
+                {showText && <span>{t('accounts.add_account')}</span>}
             </button>
 
             {isOpen && createPortal(
