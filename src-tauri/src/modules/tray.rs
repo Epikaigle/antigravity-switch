@@ -67,27 +67,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let texts = modules::i18n::get_tray_texts(&config.language);
     let dashboard = labels(&config.language);
     let snapshot = modules::account_dashboard::snapshot().ok();
-    let current = snapshot.as_ref().and_then(|snapshot| {
-        snapshot
-            .accounts
-            .iter()
-            .find(|account| Some(&account.id) == snapshot.current_account_id.as_ref())
-    });
-    let user_text = format!(
-        "{}: {}",
-        texts.saved,
-        current
-            .as_ref()
-            .map(|a| account_display_name(a))
-            .unwrap_or_else(|| texts.no_account.clone())
-    );
     let now = chrono::Utc::now().timestamp();
-    let quota_lines = modules::menu_bar_projection::saved_quota_lines(
-        current,
-        now,
-        config.refresh_interval,
-        &config.language,
-    );
     let menu = Menu::new(app)?;
     menu.append(&MenuItem::with_id(
         app,
@@ -96,23 +76,6 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         true,
         None::<&str>,
     )?)?;
-    menu.append(&PredefinedMenuItem::separator(app)?)?;
-    menu.append(&MenuItem::with_id(
-        app,
-        "info_user",
-        user_text,
-        false,
-        None::<&str>,
-    )?)?;
-    for (index, text) in quota_lines.iter().enumerate() {
-        menu.append(&MenuItem::with_id(
-            app,
-            format!("quota_{index}"),
-            text,
-            false,
-            None::<&str>,
-        )?)?;
-    }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     if let Some(ref snap) = snapshot {
         if snap.accounts.is_empty() {
@@ -184,7 +147,7 @@ pub fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
             if id == "dashboard" {
-                open_dashboard(app, None);
+                open_main_dashboard(app);
                 return;
             }
             if id == "quit" {
@@ -238,16 +201,13 @@ pub fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
-                rect,
                 ..
             } = event
             {
-                open_dashboard(tray.app_handle(), Some(rect));
+                open_main_dashboard(tray.app_handle());
             }
         })
         .build(app)?;
-    #[cfg(not(target_os = "macos"))]
-    modules::desktop::warm_dashboard(app);
     let handle = app.clone();
     app.listen("config://updated", move |_| {
         update_tray_menus(&handle);
@@ -255,15 +215,68 @@ pub fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn open_dashboard(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
+const OPEN_REFRESH_COOLDOWN_MS: i64 = 10_000;
+
+fn try_begin_refresh(
+    last_ms: &std::sync::atomic::AtomicI64,
+    in_flight: &std::sync::atomic::AtomicBool,
+    now_ms: i64,
+    cooldown_ms: i64,
+) -> bool {
+    use std::sync::atomic::Ordering;
+    if in_flight
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+        .is_err()
+    {
+        return false;
+    }
+    let prev = last_ms.load(Ordering::Acquire);
+    if prev > 0 && now_ms.saturating_sub(prev) < cooldown_ms {
+        in_flight.store(false, Ordering::Release);
+        return false;
+    }
+    last_ms.store(now_ms, Ordering::Release);
+    true
+}
+
+fn refresh_on_open_with_cooldown(app: &tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+    static LAST_REFRESH_AT_MS: AtomicI64 = AtomicI64::new(0);
+    static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    if !try_begin_refresh(
+        &LAST_REFRESH_AT_MS,
+        &IN_FLIGHT,
+        now_ms,
+        OPEN_REFRESH_COOLDOWN_MS,
+    ) {
+        return;
+    }
+
     let app = app.clone();
-    // WebView2 creation must not run synchronously in the Windows event loop.
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Err(error) = modules::desktop::toggle_dashboard(&app, rect) {
-            modules::logger::log_warn(&format!("Quick dashboard unavailable: {error}"));
-            let _ = modules::desktop::show_main(&app);
+    tauri::async_runtime::spawn(async move {
+        struct Release;
+        impl Drop for Release {
+            fn drop(&mut self) {
+                LAST_REFRESH_AT_MS
+                    .store(chrono::Utc::now().timestamp_millis(), Ordering::Release);
+                IN_FLIGHT.store(false, Ordering::Release);
+            }
+        }
+        let _release = Release;
+        if let Err(error) = crate::commands::refresh_all_quotas_internal(Some(app)).await {
+            modules::logger::log_warn(&format!("Dashboard open refresh failed: {error}"));
         }
     });
+}
+
+fn open_main_dashboard(app: &tauri::AppHandle) {
+    if let Err(error) = modules::desktop::open_app_page(app.clone(), "dashboard".into()) {
+        modules::logger::log_warn(&format!("Main window unavailable: {error}"));
+        let _ = modules::desktop::show_main(app);
+    }
+    refresh_on_open_with_cooldown(app);
 }
 
 pub fn update_tray_menus(app: &tauri::AppHandle) {
@@ -324,5 +337,24 @@ mod tests {
             account_menu_label(2, &plain, false, false, "fr"),
             "Compte 3 · alice@example.com (Indisponible)"
         );
+    }
+
+    #[test]
+    fn open_refresh_cooldown_blocks_rapid_clicks() {
+        use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+        let last = AtomicI64::new(0);
+        let in_flight = AtomicBool::new(false);
+
+        assert!(super::try_begin_refresh(&last, &in_flight, 1_000, 10_000));
+        // Concurrent click while still in flight is blocked.
+        assert!(!super::try_begin_refresh(&last, &in_flight, 2_000, 10_000));
+        in_flight.store(false, Ordering::Release);
+
+        // Clicks within 10s cooldown are blocked.
+        assert!(!super::try_begin_refresh(&last, &in_flight, 5_000, 10_000));
+        assert!(!super::try_begin_refresh(&last, &in_flight, 10_999, 10_000));
+
+        // Click after 10s succeeds again.
+        assert!(super::try_begin_refresh(&last, &in_flight, 11_000, 10_000));
     }
 }
