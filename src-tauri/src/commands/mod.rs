@@ -303,6 +303,7 @@ pub async fn refresh_all_quotas_internal(
     // 发送全局刷新事件给 UI (如果需要)
     if let Some(handle) = app_handle {
         use tauri::Emitter;
+        crate::modules::tray::update_tray_menus(&handle);
         let _ = handle.emit("accounts://refreshed", ());
     }
 

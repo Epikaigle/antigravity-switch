@@ -197,6 +197,7 @@ export default function MenuBarDashboard() {
   const generation = useRef(0);
   const operation = useRef(false);
   const mounted = useRef(true);
+  const lastRefreshAt = useRef(0);
   const preferences = useMemo(() => ({ ...DEFAULT_MENU_BAR_PREFERENCES, ...config?.menu_bar }), [config?.menu_bar]);
   const resetTimeDisplay = config?.menu_bar?.reset_time_display ?? 'always';
   const periods: QuotaWindow[] = [...(preferences.show_session ? ['5h' as const] : []), ...(preferences.show_weekly ? ['weekly' as const] : [])];
@@ -228,6 +229,19 @@ export default function MenuBarDashboard() {
     try { const next = await request<Appearance>('get_menu_bar_appearance'); if (mounted.current) setAppearance(next); }
     catch { if (mounted.current) setAppearance(null); }
   }, []);
+  const refresh = useCallback(async () => {
+    const nowMs = Date.now();
+    if (operation.current || !isTauri() || nowMs - lastRefreshAt.current < 10_000) return;
+    lastRefreshAt.current = nowMs;
+    operation.current = true; setRefreshing(true); setError('');
+    const currentCopy = MB_COPY[normalizeLanguage(i18n.language)];
+    try {
+      const result = await request<{ failed: number }>('refresh_all_quotas');
+      await reload();
+      if (mounted.current && result.failed) setError(currentCopy.partialRefreshFail(result.failed));
+    } catch { if (mounted.current) setError(currentCopy.refreshFail); }
+    finally { lastRefreshAt.current = Date.now(); operation.current = false; if (mounted.current) setRefreshing(false); }
+  }, [i18n, reload]);
   useEffect(() => {
     mounted.current = true;
     document.documentElement.classList.add('panel-window'); document.body.classList.add('panel-window');
@@ -235,12 +249,12 @@ export default function MenuBarDashboard() {
     if (!isTauri()) return;
     void readAppearance();
     const subscriptions = [
-      listen('menubar://opened', () => { void reload(); void readAppearance(); }),
+      listen('menubar://opened', () => { void reload(); void readAppearance(); void refresh(); }),
       ...['menubar://data-updated', 'tray://account-switched', 'accounts://refreshed'].map(event => listen(event, () => void reload())),
       listen<Appearance>('menubar://appearance', event => setAppearance(event.payload)),
     ];
     return () => { mounted.current = false; generation.current++; void Promise.all(subscriptions).then(stops => stops.forEach(stop => stop())); };
-  }, [reload, readAppearance]);
+  }, [reload, readAppearance, refresh]);
   useEffect(() => {
     const timer = window.setInterval(() => { if (document.visibilityState !== 'hidden') setNow(Date.now()); }, 30000);
     const key = (event: KeyboardEvent) => {
@@ -263,16 +277,6 @@ export default function MenuBarDashboard() {
   const visible = accounts.slice(visiblePage * capacity, (visiblePage + 1) * capacity);
   const busy = refreshing || Boolean(switching);
   const openPage = (page: string) => { if (isTauri()) void request('open_app_page', { page }); };
-  const refresh = async () => {
-    if (operation.current || busy) return;
-    operation.current = true; setRefreshing(true); setError('');
-    try {
-      const result = await request<{ failed: number }>('refresh_all_quotas');
-      await reload();
-      if (mounted.current && result.failed) setError(copy.partialRefreshFail(result.failed));
-    } catch { if (mounted.current) setError(copy.refreshFail); }
-    finally { operation.current = false; if (mounted.current) setRefreshing(false); }
-  };
   const switchAccount = async (id: string) => {
     const target = accounts.find(view => view.account.id === id);
     if (operation.current || busy || !target?.switchable || id === snapshot?.current_account_id) return;

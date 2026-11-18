@@ -34,9 +34,6 @@ fn supported_language(locale: &str) -> Option<&'static str> {
 pub struct TrayTexts {
     pub saved: String,
     pub quota: String,
-    pub switch_next: String,
-    pub refresh_saved: String,
-    pub show_window: String,
     pub quit: String,
     pub no_account: String,
     pub unknown_quota: String,
@@ -80,15 +77,6 @@ pub fn get_tray_texts(lang: &str) -> TrayTexts {
             .get("quota")
             .cloned()
             .unwrap_or_else(|| "Quota".to_string()),
-        switch_next: t
-            .get("switch_next")
-            .cloned()
-            .unwrap_or_else(|| "Switch to Next Account".to_string()),
-        refresh_saved: t.get("refresh_saved").cloned().unwrap_or_else(|| "Refresh Saved Account Quota".into()),
-        show_window: t
-            .get("show_window")
-            .cloned()
-            .unwrap_or_else(|| "Show Main Window".to_string()),
         quit: t
             .get("quit")
             .cloned()
